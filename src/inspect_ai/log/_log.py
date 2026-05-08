@@ -837,6 +837,66 @@ class EvalRevision(BaseModel):
     """Working tree has uncommitted changes or untracked files."""
 
 
+class PreRegistration(BaseModel):
+    """Optional pre-registration of an eval claim, conformant with PRML v0.1.
+
+    When present in `EvalSpec.pre_registration`, this field commits the eval
+    claim's threshold and configuration to a SHA-256 hash *before* the run
+    completes. The hash is computed by canonicalising these fields per the
+    PRML v0.1 specification (https://spec.falsify.dev/v0.1) and stored in the
+    `manifest_hash` field; tooling such as `prml-verify-action` re-derives
+    the hash to detect post-hoc edits.
+
+    PreRegistration is fully optional. Existing eval logs without this field
+    are unaffected. The field is informational from Inspect's perspective —
+    the eval pipeline does not enforce the threshold; a downstream verifier
+    (e.g. CI gate) does.
+
+    Fields map to PRML v0.1 §3 (Required fields):
+
+      - metric:               PRML `metric`
+      - threshold:            PRML `threshold`
+      - threshold_direction:  PRML `comparator` (one of >= <= > < ==)
+      - dataset_hash:         PRML `dataset.hash` (SHA-256 of canonical dataset bytes)
+      - sample_size:          PRML-derived (typically EvalConfig.epochs * len(dataset))
+      - manifest_hash:        SHA-256 of the canonicalised PRML manifest
+                              (the receipt; what registries and verifiers cite)
+
+    See PRML §8.1 for the explicit limitation: pre-registration commits the
+    threshold; it does not compel publication of every claim committed.
+    """
+
+    prml_version: Literal["0.1", "0.2"] = Field(default="0.1")
+    """PRML specification version this manifest conforms to."""
+
+    metric: str
+    """The metric being pre-registered (e.g. 'accuracy', 'refusal_rate')."""
+
+    threshold: float
+    """The numeric threshold this run is committed against."""
+
+    threshold_direction: Literal[">=", "<=", ">", "<", "=="]
+    """Direction of the threshold comparison (PRML `comparator`)."""
+
+    dataset_hash: str
+    """SHA-256 of the canonical dataset bytes (PRML `dataset.hash`)."""
+
+    sample_size: int
+    """Number of evaluation samples (typically epochs × |dataset|)."""
+
+    seed: int | None = Field(default=None)
+    """RNG seed when applicable. None for non-deterministic streams."""
+
+    pre_registered_at: UtcDatetimeStr
+    """Timestamp at which the pre-registration hash was committed."""
+
+    manifest_hash: str
+    """SHA-256 of the canonicalised PRML manifest (the receipt). Format: 'sha256:<64 hex>'."""
+
+    registry_url: str | None = Field(default=None)
+    """Optional URL to a public anchor (e.g. registry.falsify.dev/<hash>)."""
+
+
 class EvalSpec(BaseModel):
     """Eval target and configuration."""
 
@@ -917,6 +977,11 @@ class EvalSpec(BaseModel):
 
     revision: EvalRevision | None = Field(default=None)
     """Source revision of eval."""
+
+    pre_registration: PreRegistration | None = Field(default=None)
+    """Optional PRML pre-registration manifest committing threshold and
+    configuration to a SHA-256 hash before the run. See PreRegistration
+    docstring for details. PRML v0.1: https://spec.falsify.dev/v0.1"""
 
     packages: dict[str, str] = Field(default_factory=dict)
     """Package versions for eval."""
